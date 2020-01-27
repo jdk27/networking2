@@ -1,2 +1,4 @@
-# networking2
-Networking project 2
+# Reliable Streaming Network Transport Simulator
+
+by Steve Tarzia
+
