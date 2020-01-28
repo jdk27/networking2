@@ -9,11 +9,12 @@ random.seed(398120)
 
 
 class SimulationParams:
-    def __init__(self, loss_rate: float=0.0, corruption_rate: float=0.0,
-                 max_delivery_delay: float=0.0):
+    def __init__(self, loss_rate: float = 0.0, corruption_rate: float = 0.0,
+                 max_delivery_delay: float = 0.0):
         self.loss_rate = loss_rate
         self.corruption_rate = corruption_rate
         self.max_delivery_delay = max_delivery_delay
+
 
 class SimulationStats:
     def __init__(self):
@@ -27,10 +28,12 @@ class SimulationStats:
         # print some stats
         print("PACKETS_SENT=%d" % self.packets_sent)
         print("UDP_BYTES_SENT=%d" % self.bytes_sent)
-        print("ETH_BYTES_SENT=%d" % (self.bytes_sent + (18+20+8) * self.packets_sent))
+        print("ETH_BYTES_SENT=%d" %
+              (self.bytes_sent + (18+20+8) * self.packets_sent))
         print("PACKETS_RECV=%d" % self.packets_recv)
         print("UDP_BYTES_RECV=%d" % self.bytes_recv)
-        print("ETH_BYTES_RECV=%d" % (self.bytes_recv + (18+20+8) * self.packets_recv))
+        print("ETH_BYTES_RECV=%d" %
+              (self.bytes_recv + (18+20+8) * self.packets_recv))
 
 
 # global simulation parameters
@@ -50,7 +53,8 @@ class LossyUDP(socket):
         """Unlike the sendto method provided by the BSD socket lib,
            this method never blocks (because it schedules the transmission on a thread)."""
         if len(message) > 1472:
-            raise RuntimeError("You are trying to send more than 1472 bytes in one UDP packet!")
+            raise RuntimeError(
+                "You are trying to send more than 1472 bytes in one UDP packet!")
         with stats.lock:
             stats.packets_sent += 1
             stats.bytes_sent += len(message)
@@ -69,7 +73,8 @@ class LossyUDP(socket):
                     bits_flipped += 1
                     # corrupt the packet
                     byte_to_be_flipped = message[int(bit_to_flip / 8)]
-                    flipped_byte = byte_to_be_flipped ^ (1 << (bit_to_flip % 8))
+                    flipped_byte = byte_to_be_flipped ^ (
+                        1 << (bit_to_flip % 8))
                     # bytes type is not mutable, but bytearray is:
                     msg_array = bytearray(message)
                     msg_array[int(bit_to_flip / 8)] = flipped_byte
@@ -82,7 +87,7 @@ class LossyUDP(socket):
             Timer(random.random() * sim.max_delivery_delay,
                   lambda: super(self.__class__, self).sendto(message, dst)).start()
 
-    def recvfrom(self, bufsize: int=2048) -> (bytes, (str, int)):
+    def recvfrom(self, bufsize: int = 2048) -> (bytes, (str, int)):
         """Blocks until a packet is received.
            returns (data, (source_ip, source_port))"""
         while True:
