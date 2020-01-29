@@ -36,22 +36,16 @@ class Streamer:
         # your code goes here!  The code below should be changed!
 
         data, addr = self.socket.recvfrom()
-        print('data: ' + str(data))
-        print('data length: ' + str(len(data)))
         seq_num = get_seq_num(data)
-        payload = get_payload(data)
         # keep retrieving data until the expected sequence num comes
         while seq_num != self.expected_num:
+            self.rec_buf[seq_num] = data
             data, addr = self.socket.recvfrom()
-            print('expected sequence number: ' + str(self.expected_num))
-            print('data: ' + str(data))
-            print('data length: ' + str(len(data)))
             seq_num = get_seq_num(data)
             # if incoming data doesn't have sequence num, add it to the buffer
-            self.rec_buf[seq_num] = data
         # increase the expected sequence num once the packet has come in
         self.expected_num += len(data)
-        application_data = payload
+        application_data = get_payload(data)
         while self.expected_num in self.rec_buf:
             application_data += get_payload(self.rec_buf[self.expected_num])
             new_expected_num = self.expected_num + \
