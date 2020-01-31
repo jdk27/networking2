@@ -53,6 +53,12 @@ class Streamer:
             self.expected_num = new_expected_num
         return application_data
 
+    def close(self) -> None:
+        """Cleans up. It should block (wait) until the Streamer is done with all
+           the necessary ACKs and retransmissions"""
+        # your code goes here, especially after you add ACKs and retransmissions.
+        pass
+
 
 def get_seq_num(data: bytes):
     num = data.decode('utf-8')
