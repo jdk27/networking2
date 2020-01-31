@@ -37,13 +37,12 @@ class Streamer:
 
         data, addr = self.socket.recvfrom()
         seq_num = get_seq_num(data)
-        # keep retrieving data until the expected sequence num comes
-        while seq_num != self.expected_num:
+        # if not expected data, add it to the buffer and return nothing
+        if seq_num != self.expected_num:
             self.rec_buf[seq_num] = data
-            data, addr = self.socket.recvfrom()
-            seq_num = get_seq_num(data)
-            # if incoming data doesn't have sequence num, add it to the buffer
-        # increase the expected sequence num once the packet has come in
+            return b''
+
+        # if expected data, check buffer for contiguous segments and return total contiguous payload
         self.expected_num += len(data)
         application_data = get_payload(data)
         while self.expected_num in self.rec_buf:
