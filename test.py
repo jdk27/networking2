@@ -9,7 +9,10 @@ def receive(s):
     expected = 0
     str_buf = ""
     while expected < NUMS:
+        print('Test\'s expected var: ' + str(expected))
+        print('Test before s.recv')
         data = s.recv()
+        print('Test data after s.recv: ' + str(data))
         print("recv returned {%s}" % data.decode('utf-8'))
         str_buf += data.decode('utf-8')
         for t in str_buf.split(" "):
@@ -45,6 +48,7 @@ def host1(listen_port, remote_port):
             s.send(buf.encode('utf-8'))
             buf = ""
         i += 1
+    s.close()
     print("CHECK THE OTHER SCRIPT FOR STAGE 2 RESULTS.")
 
 
@@ -57,6 +61,7 @@ def host2(listen_port, remote_port):
         print("sending {%s}" % buf)
         s.send(buf.encode('utf-8'))
     receive(s)
+    s.close()
     print("STAGE 2 TEST PASSED!")
 
 
