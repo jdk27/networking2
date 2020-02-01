@@ -21,15 +21,19 @@ class Streamer:
         """Note that data_bytes can be larger than one packet."""
         # Your code goes here!  The code below should be changed!
         # length check should be dif bc must make space for header
-        checksum = self.calculate_checksum(data_bytes)
-        header = str(self.expected_num).encode('utf-8') + \
-            b'C'+checksum.encode('utf-8')+b'\r\n\r\n'
-        if len(data_bytes) + len(header) > 1472:
-            payload = data_bytes[:1472-len(header)]
+        seq_num = str(self.expected_num).encode('utf-8')
+        if len(data_bytes) + len(seq_num) + 6 + len(b'\r\n\r\n') > 1472:
+            payload = data_bytes[:1472-len(seq_num)-6-len(b'\r\n\r\n')]
+            checksum = self.calculate_checksum(payload).encode('utf-8')
+            print('send checksum: ' + checksum.decode('utf-8'))
+            header = seq_num+b'C'+checksum+b'\r\n\r\n'
+            print(len(header+payload))
             self.socket.sendto(header+payload, (self.dst_ip, self.dst_port))
             self.expected_num += 1472
             self.send(data_bytes[1472-len(header):])
         else:
+            checksum = self.calculate_checksum(data_bytes).encode('utf-8')
+            header = seq_num+b'C'+checksum+b'\r\n\r\n'
             self.socket.sendto(header+data_bytes, (self.dst_ip, self.dst_port))
             self.expected_num += len(header)+len(data_bytes)
 
@@ -40,9 +44,9 @@ class Streamer:
         data, addr = self.socket.recvfrom()
         seq_num = get_seq_num(data)
         checksum = get_checksum(data).decode('utf-8')
-        print(checksum)
+        print('checksum field for receive: ' + checksum)
         calculated_checksum = self.calculate_checksum(get_payload(data))
-        print(calculated_checksum)
+        print('calculated checksum for receive: ' + calculated_checksum)
         if checksum != self.calculate_checksum(get_payload(data)):
             print('corrupted segment')
             self.corrupted_count += 1
@@ -72,6 +76,7 @@ class Streamer:
 
     def calculate_checksum(self, msg):
         msg = msg.decode('utf-8')
+        print('payload to calculate checksum: ' + msg)
         s = 0       # Binary Sum
         # loop taking 2 characters at a time
         for i in range(0, len(msg), 2):
