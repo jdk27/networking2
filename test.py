@@ -9,10 +9,7 @@ def receive(s):
     expected = 0
     str_buf = ""
     while expected < NUMS:
-        print('Test\'s expected var: ' + str(expected))
-        print('Test before s.recv')
         data = s.recv()
-        print('Test data after s.recv: ' + str(data))
         print("recv returned {%s}" % data.decode('utf-8'))
         str_buf += data.decode('utf-8')
         for t in str_buf.split(" "):

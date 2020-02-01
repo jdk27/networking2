@@ -20,16 +20,24 @@ class Streamer:
         self.rec_buf = {}
         self.timer_buf = {}
         self.listener = True
-        print('Before listener thread')
         executor = ThreadPoolExecutor(max_workers=2)
         executor.submit(self.listening)
-        print('Listener in thread')
+
+    def listening(self) -> bytes:
+        """Blocks (waits) if no data is ready to be read from the connection."""
+        while self.listener:
+            data, addr = self.socket.recvfrom()
+            if data and data[0] == 65:
+                self.ack_recv(data)
+            elif data:
+                seq_num = get_seq_num(data)
+                self.rec_buf[seq_num] = data
+                self.ack_send(data)
 
     def send(self, data_bytes: bytes):
         """Note that data_bytes can be larger than one packet."""
         # Your code goes here!  The code below should be changed!
         # length check should be dif bc must make space for header
-        print('sequence number: ' + str(self.expected_num))
         header = str(self.expected_num).encode('utf-8')+b'\r\n\r\n'
         if len(data_bytes) + len(header) > 1472:
             payload = data_bytes[:1472-len(header)]
@@ -45,22 +53,6 @@ class Streamer:
             timer = Timer(.25, self.retransmission, [header+data_bytes])
             self.timer_buf[self.expected_num] = timer
             # timer.start()
-
-    def listening(self) -> bytes:
-        """Blocks (waits) if no data is ready to be read from the connection."""
-        #data, addr = self.socket.recvfrom()
-        #seq_num = get_seq_num(data)
-        #self.rec_buf[seq_num] = data
-        # self.ack_send(data)
-        while self.listener:
-            data, addr = self.socket.recvfrom()
-            print('raw data: ' + str(data))
-            if data and data[0] == 65:
-                self.ack_recv(data)
-            elif data:
-                seq_num = get_seq_num(data)
-                self.rec_buf[seq_num] = data
-                self.ack_send(data)
 
     def recv(self) -> bytes:
         # if not expected data, return nothing
@@ -83,11 +75,15 @@ class Streamer:
         """Cleans up. It should block (wait) until the Streamer is done with all
            the necessary ACKs and retransmissions"""
         # your code goes here, especially after you add ACKs and retransmissions.
+        print('Timer buf: ' + str(self.timer_buf))
+        while len(self.timer_buf) != 0:
+            pass
+        print('Timer buf: ' + str(self.timer_buf))
         self.listener = False
 
     def ack_recv(self, data: bytes):
-        print('ACK received')
         ack_num = get_ack_num(data)
+        print('Ack_num: ' + str(ack_num))
         # self.timer_buf[ack_num].cancel()
         self.timer_buf.pop(ack_num)
 
@@ -95,7 +91,6 @@ class Streamer:
         ack_num = str(get_seq_num(data)+len(data))
         header = b'A'+ack_num.encode('utf-8')+b'\r\n\r\n'
         self.socket.sendto(header, (self.dst_ip, self.dst_port))
-        print('ACK ' + ack_num + ' sent')
 
     def retransmission(self, data: bytes):
         self.socket.sendto(data, (self.dst_ip, self.dst_port))
