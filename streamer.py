@@ -21,7 +21,7 @@ class Streamer:
         self.rec_buf = {}
         self.timer_buf = {}
         self.listener = True
-        self.timeout = 30
+        self.timeout = 25
         self.other_fin = False
         executor = ThreadPoolExecutor(max_workers=2)
         executor.submit(self.listening)
@@ -98,6 +98,8 @@ class Streamer:
         while not self.other_fin:
             time.sleep(5)
             print('Waiting for the other to finish')
+            print('Sent the fin again just in case ~shrug~')
+            self.send_fin()
             pass
         print('And we have received word the other has finished')
         self.listener = False
@@ -119,8 +121,7 @@ class Streamer:
         self.socket.sendto(header, (self.dst_ip, self.dst_port))
 
     def retransmission(self, data: bytes):
-        print('THE TIMER HAS RUN OUT')
-        print('Timeout ACK: ', get_ack_num(data))
+        print('THE TIMER HAS RUN OUT with ACK number: ', get_ack_num(data))
         self.socket.sendto(data, (self.dst_ip, self.dst_port))
         timer = Timer(self.timeout, self.retransmission, [data])
         self.timer_buf[get_seq_num(data)+len(data)] = timer
