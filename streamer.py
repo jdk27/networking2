@@ -5,6 +5,7 @@ from socket import INADDR_ANY
 # threading for part 3: packet loss
 from concurrent.futures import ThreadPoolExecutor
 from threading import Timer
+import time
 
 
 class Streamer:
@@ -21,6 +22,7 @@ class Streamer:
         self.timer_buf = {}
         self.listener = True
         self.timeout = 30
+        self.other_fin = False
         executor = ThreadPoolExecutor(max_workers=2)
         executor.submit(self.listening)
 
@@ -30,6 +32,8 @@ class Streamer:
             data, addr = self.socket.recvfrom()
             if data and data[0] == 65:
                 self.ack_recv(data)
+            elif data and data[0] == 70:
+                self.other_fin = True
             elif data:
                 seq_num = get_seq_num(data)
                 self.rec_buf[seq_num] = data
@@ -84,11 +88,24 @@ class Streamer:
         # your code goes here, especially after you add ACKs and retransmissions.
         print('Ready to close Timer buf: ' + str(self.timer_buf))
         while len(self.timer_buf) != 0:
+            time.sleep(5)
             print('Waiting Timer buf: ' + str(self.timer_buf))
             pass
         print('Closed Timer buf: ' + str(self.timer_buf))
+        
+        self.send_fin()
+        print('Sent the fin')
+        while not self.other_fin:
+            time.sleep(5)
+            print('Waiting for the other to finish')
+            pass
+        print('And we have received word the other has finished')
         self.listener = False
 
+    def send_fin(self):
+        fin = b'F\r\n\r\n'
+        self.socket.sendto(fin, (self.dst_ip, self.dst_port))
+    
     def ack_recv(self, data: bytes):
         ack_num = get_ack_num(data)
         print('Received Ack_num: ' + str(ack_num))
