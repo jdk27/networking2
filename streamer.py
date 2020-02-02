@@ -15,7 +15,6 @@ class Streamer:
         self.dst_port = dst_port
         self.expected_num = 0
         self.rec_buf = {}
-        self.corrupted_count = 0
 
     def send(self, data_bytes: bytes):
         """Note that data_bytes can be larger than one packet."""
@@ -49,7 +48,6 @@ class Streamer:
         print('calculated checksum for receive: ' + calculated_checksum)
         if checksum != self.calculate_checksum(get_payload(data)):
             print('corrupted segment')
-            self.corrupted_count += 1
             return b''
         # if not expected data, add it to the buffer and return nothing
         if seq_num != self.expected_num:
@@ -72,7 +70,6 @@ class Streamer:
            the necessary ACKs and retransmissions"""
         # your code goes here, especially after you add ACKs and retransmissions.
         pass
-        print('corrupted segments: ' + str(self.corrupted_count))
 
     def calculate_checksum(self, msg):
         msg = msg.decode('utf-8')
