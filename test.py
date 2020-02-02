@@ -2,6 +2,7 @@ from streamer import Streamer
 import sys
 import lossy_socket
 
+# NUMS = 1000
 NUMS = 1000
 
 
@@ -58,13 +59,13 @@ def host2(listen_port, remote_port):
         print("sending {%s}" % buf)
         s.send(buf.encode('utf-8'))
     receive(s)
-    s.close()
+    # s.close()
     print("STAGE 2 TEST PASSED!")
 
 
 def main():
     lossy_socket.sim = lossy_socket.SimulationParams(
-        loss_rate=0.0, corruption_rate=0.0, max_delivery_delay=0.1)
+        loss_rate=0.1, corruption_rate=0.0, max_delivery_delay=0.1)
 
     if len(sys.argv) < 4:
         print("usage is: python3 test.py [port1] [port2] [1|2]")

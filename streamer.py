@@ -20,23 +20,20 @@ class Streamer:
         self.rec_buf = {}
         self.timer_buf = {}
         self.listener = True
+        self.timeout = 30
         executor = ThreadPoolExecutor(max_workers=2)
         executor.submit(self.listening)
 
-    # def send(self, data_bytes: bytes):
-    #     """Note that data_bytes can be larger than one packet."""
-    #     # Your code goes here!  The code below should be changed!
-    #     # length check should be dif bc must make space for header
-    #     print('sequence number: ' + str(self.expected_num))
-    #     header = str(self.expected_num).encode('utf-8')+b'\r\n\r\n'
-    #     if len(data_bytes) + len(header) > 1472:
-    #         payload = data_bytes[:1472-len(header)]
-    #         self.socket.sendto(header+payload, (self.dst_ip, self.dst_port))
-    #         self.expected_num += 1472
-    #         self.send(data_bytes[1472-len(header):])
-    #     else:
-    #         self.socket.sendto(header+data_bytes, (self.dst_ip, self.dst_port))
-    #         self.expected_num += len(header)+len(data_bytes)
+    def listening(self) -> bytes:
+        """Blocks (waits) if no data is ready to be read from the connection."""
+        while self.listener:
+            data, addr = self.socket.recvfrom()
+            if data and data[0] == 65:
+                self.ack_recv(data)
+            elif data:
+                seq_num = get_seq_num(data)
+                self.rec_buf[seq_num] = data
+                self.ack_send(data)
 
     def send(self, data_bytes: bytes):
         """Note that data_bytes can be larger than one packet."""
@@ -47,25 +44,25 @@ class Streamer:
             payload = data_bytes[:1472-len(header)]
             self.socket.sendto(header+payload, (self.dst_ip, self.dst_port))
             self.expected_num += 1472
-            timer = Timer(.25, self.retransmission, [header+payload])
+            timer = Timer(self.timeout, self.retransmission, [header+payload])
+           
             self.timer_buf[self.expected_num] = timer
-            # timer.start()
+            # self.timer_buf[self.expected_num+len(payload)] = timer
+
+            timer.start()
             self.send(data_bytes[1472-len(header):])
         else:
             self.socket.sendto(header+data_bytes, (self.dst_ip, self.dst_port))
             self.expected_num += len(header)+len(data_bytes)
-            timer = Timer(.25, self.retransmission, [header+data_bytes])
+            timer = Timer(self.timeout, self.retransmission, [header+data_bytes])
+            
             self.timer_buf[self.expected_num] = timer
-            # timer.start()
+            # self.timer_buf[self.expected_num+len(data_bytes)] = timer
+
+            timer.start()
 
     def recv(self) -> bytes:
-        """Blocks (waits) if no data is ready to be read from the connection."""
-        # your code goes here!  The code below should be changed!
-
-        # data, addr = self.socket.recvfrom()
-        # seq_num = get_seq_num(data)
-
-        # if not expected data, add it to the buffer and return nothing
+        # if not expected data, return nothing
         if self.expected_num not in self.rec_buf:
             return b''
 
@@ -85,51 +82,44 @@ class Streamer:
         """Cleans up. It should block (wait) until the Streamer is done with all
            the necessary ACKs and retransmissions"""
         # your code goes here, especially after you add ACKs and retransmissions.
+        print('Ready to close Timer buf: ' + str(self.timer_buf))
+        while len(self.timer_buf) != 0:
+            print('Waiting Timer buf: ' + str(self.timer_buf))
+            pass
+        print('Closed Timer buf: ' + str(self.timer_buf))
         self.listener = False
 
-    def listening(self):
-        while self.listener:
-            data, addr = self.socket.recvfrom()
-            print('raw data: ' + str(data))
-            if data and data[0] == b'A':
-                self.ack_recv(data)
-            elif data:
-                seq_num = get_seq_num(data)
-                self.rec_buf[seq_num] = data
-                # self.ack_send(data)
-                print('looks like we are getting data in the listener')
-
-            # seq_num = get_seq_num(data)
-            # self.rec_buf[seq_num] = data
-            # # self.ack_send(data)
-            # # print('sent the ack')
-    
     def ack_recv(self, data: bytes):
         ack_num = get_ack_num(data)
-        print('Ack_num: ' + str(ack_num))
-        # self.timer_buf[ack_num].cancel()
+        print('Received Ack_num: ' + str(ack_num))
+        self.timer_buf[ack_num].cancel()
         self.timer_buf.pop(ack_num)
-    
+
     def ack_send(self, data: bytes):
         ack_num = str(get_seq_num(data)+len(data))
+        print('Sent Ack_num: ' + str(ack_num))
         header = b'A'+ack_num.encode('utf-8')+b'\r\n\r\n'
         self.socket.sendto(header, (self.dst_ip, self.dst_port))
 
     def retransmission(self, data: bytes):
+        print('THE TIMER HAS RUN OUT')
+        print('Timeout ACK: ', get_ack_num(data))
         self.socket.sendto(data, (self.dst_ip, self.dst_port))
-        timer = Timer(.25, self.retransmission, [data])
+        timer = Timer(self.timeout, self.retransmission, [data])
         self.timer_buf[get_seq_num(data)+len(data)] = timer
         timer.start()
 
 
-def get_seq_num(data: bytes):
+def get_seq_num(data: bytes) -> int:
     num = data.decode('utf-8')
     return int(num[:num.find('\r\n\r\n')])
+
 
 def get_ack_num(data: bytes) -> int:
     num = data.decode('utf-8')
     return int(num[1:num.find('\r\n\r\n')])
 
-def get_payload(data: bytes):
+
+def get_payload(data: bytes) -> bytes:
     data = data.decode('utf-8')
     return data[data.find('\r\n\r\n')+len('\r\n\r\n'):].encode('utf-8')
