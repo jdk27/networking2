@@ -20,11 +20,13 @@ class Streamer:
         self.expected_num = 0
         self.rec_buf = {}
         self.timer_buf = {}
+        self.ack_buf = []
         self.listener = True
-        self.timeout = 25
+        self.timeout = 1
         self.other_fin = False
-        executor = ThreadPoolExecutor(max_workers=2)
+        executor = ThreadPoolExecutor(max_workers=3)
         executor.submit(self.listening)
+        executor.submit(self.acking)
 
     def listening(self) -> bytes:
         """Blocks (waits) if no data is ready to be read from the connection."""
@@ -37,7 +39,16 @@ class Streamer:
             elif data:
                 seq_num = get_seq_num(data)
                 self.rec_buf[seq_num] = data
-                self.ack_send(data)
+                # self.ack_send(data)
+                self.ack_buf.append(data)
+            print('are we still listening?')
+        print('something broke us out of the loop!')
+
+    def acking(self):
+        while self.listener:
+            while self.ack_buf:
+                self.ack_send(self.ack_buf[0])
+                self.ack_buf.pop(0)
 
     def send(self, data_bytes: bytes):
         """Note that data_bytes can be larger than one packet."""
@@ -50,19 +61,23 @@ class Streamer:
             self.expected_num += 1472
             timer = Timer(self.timeout, self.retransmission, [header+payload])
            
+            
+            # expect_num already includes the new bytes making it an ACk
             self.timer_buf[self.expected_num] = timer
             # self.timer_buf[self.expected_num+len(payload)] = timer
-
             timer.start()
+            print('Set timer in send with ack num: ', self.expected_num)
             self.send(data_bytes[1472-len(header):])
         else:
             self.socket.sendto(header+data_bytes, (self.dst_ip, self.dst_port))
             self.expected_num += len(header)+len(data_bytes)
             timer = Timer(self.timeout, self.retransmission, [header+data_bytes])
             
+            #Expected_num already includes the bytes making it an ack
             self.timer_buf[self.expected_num] = timer
             # self.timer_buf[self.expected_num+len(data_bytes)] = timer
 
+            print('Set timer in send with ack num: ', self.expected_num)
             timer.start()
 
     def recv(self) -> bytes:
@@ -121,10 +136,12 @@ class Streamer:
         self.socket.sendto(header, (self.dst_ip, self.dst_port))
 
     def retransmission(self, data: bytes):
-        print('THE TIMER HAS RUN OUT with ACK number: ', get_ack_num(data))
+        print('THE TIMER HAS RUN OUT with ACK number: ', get_seq_num(data)+len(data))
         self.socket.sendto(data, (self.dst_ip, self.dst_port))
         timer = Timer(self.timeout, self.retransmission, [data])
         self.timer_buf[get_seq_num(data)+len(data)] = timer
+        # self.timer_buf[get_seq_num(data)] = timer
+        print("set timer in retransmit with ack num: ", get_seq_num(data)+len(data))
         timer.start()
 
 
