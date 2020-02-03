@@ -2,7 +2,6 @@ from streamer import Streamer
 import sys
 import lossy_socket
 
-# NUMS = 1000
 NUMS = 1000
 
 
@@ -11,15 +10,14 @@ def receive(s):
     str_buf = ""
     while expected < NUMS:
         data = s.recv()
-        # print("recv returned {%s}" % data.decode('utf-8'))
-        if data: print("recv returned {%s}" % data.decode('utf-8'))
+        print("recv returned {%s}" % data.decode('utf-8'))
         str_buf += data.decode('utf-8')
         for t in str_buf.split(" "):
             if len(t) == 0:
                 # there could be a "" at the start or the end, if a space is there
                 continue
             if int(t) == expected:
-                # print("got %d!" % expected)
+                print("got %d!" % expected)
                 expected += 1
                 str_buf = ''
             elif int(t) > expected:
@@ -65,8 +63,9 @@ def host2(listen_port, remote_port):
 
 
 def main():
-    lossy_socket.sim = lossy_socket.SimulationParams(
-        loss_rate=0.1, corruption_rate=0.0, max_delivery_delay=0.0)
+    lossy_socket.sim = lossy_socket.SimulationParams(loss_rate=0.0, corruption_rate=0.0,
+                                                     max_delivery_delay=0.0,
+                                                     become_reliable_after=100000.0)
 
     if len(sys.argv) < 4:
         print("usage is: python3 test.py [port1] [port2] [1|2]")
