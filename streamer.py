@@ -129,6 +129,7 @@ class Streamer:
         self.timer_buf[ack_num].cancel()
         self.timer_buf.pop(ack_num)
 
+
     def ack_send(self, data: bytes):
         ack_num = str(get_seq_num(data)+len(data))
         print('Sent Ack_num: ' + str(ack_num))
@@ -144,7 +145,6 @@ class Streamer:
         print("set timer in retransmit with ack num: ", get_seq_num(data)+len(data))
         timer.start()
 
-
 def get_seq_num(data: bytes) -> int:
     num = data.decode('utf-8')
     return int(num[:num.find('\r\n\r\n')])
@@ -153,6 +153,7 @@ def get_seq_num(data: bytes) -> int:
 def get_ack_num(data: bytes) -> int:
     num = data.decode('utf-8')
     return int(num[1:num.find('\r\n\r\n')])
+
 
 
 def get_payload(data: bytes) -> bytes:

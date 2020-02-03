@@ -85,6 +85,7 @@ class LossyUDP(socket):
             Timer(random.random() * sim.max_delivery_delay,
                   lambda: super(self.__class__, self).sendto(message, dst)).start()
 
+
     def recvfrom(self, bufsize: int=2048) -> (bytes, (str, int)):
         """Blocks until a packet is received or self.stoprecv() is called.
            returns (data, (source_ip, source_port))"""
@@ -107,3 +108,4 @@ class LossyUDP(socket):
 
     def stoprecv(self) -> None:
         self.stopped = True
+
