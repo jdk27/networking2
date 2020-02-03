@@ -11,7 +11,8 @@ def receive(s):
     str_buf = ""
     while expected < NUMS:
         data = s.recv()
-        #print("recv returned {%s}" % data.decode('utf-8'))
+        # print("recv returned {%s}" % data.decode('utf-8'))
+        if data: print("recv returned {%s}" % data.decode('utf-8'))
         str_buf += data.decode('utf-8')
         for t in str_buf.split(" "):
             if len(t) == 0:
@@ -65,7 +66,7 @@ def host2(listen_port, remote_port):
 
 def main():
     lossy_socket.sim = lossy_socket.SimulationParams(
-        loss_rate=0.1, corruption_rate=0.0, max_delivery_delay=0.1)
+        loss_rate=0.1, corruption_rate=0.0, max_delivery_delay=0.0)
 
     if len(sys.argv) < 4:
         print("usage is: python3 test.py [port1] [port2] [1|2]")

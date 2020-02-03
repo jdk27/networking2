@@ -5,6 +5,7 @@ from socket import INADDR_ANY
 # threading for part 3: packet loss
 from concurrent.futures import ThreadPoolExecutor
 from threading import Timer
+import time
 
 
 class Streamer:
@@ -19,27 +20,35 @@ class Streamer:
         self.expected_num = 0
         self.rec_buf = {}
         self.timer_buf = {}
+        self.ack_buf = []
         self.listener = True
-        self.timeout = .25
-        self.executor = ThreadPoolExecutor(max_workers=5)
-        self.future = self.executor.submit(self.listening)
-        self.received_acks = set([])
-        self.sent_acks = set([])
+        self.timeout = 1
+        self.other_fin = False
+        executor = ThreadPoolExecutor(max_workers=3)
+        executor.submit(self.listening)
+        executor.submit(self.acking)
 
     def listening(self) -> bytes:
         """Blocks (waits) if no data is ready to be read from the connection."""
         while self.listener:
             data, addr = self.socket.recvfrom()
-            print('raw data: ' + str(data))
-            print('expected num: ' + str(self.expected_num))
-            print(self.rec_buf.keys())
             if data and data[0] == 65:
                 self.ack_recv(data)
+            elif data and data[0] == 70:
+                self.other_fin = True
             elif data:
                 seq_num = get_seq_num(data)
-                if seq_num >= self.expected_num:
-                    self.rec_buf[seq_num] = data
-                self.ack_send(data)
+                self.rec_buf[seq_num] = data
+                # self.ack_send(data)
+                self.ack_buf.append(data)
+            print('are we still listening?')
+        print('something broke us out of the loop!')
+
+    def acking(self):
+        while self.listener:
+            while self.ack_buf:
+                self.ack_send(self.ack_buf[0])
+                self.ack_buf.pop(0)
 
     def send(self, data_bytes: bytes):
         """Note that data_bytes can be larger than one packet."""
@@ -49,21 +58,26 @@ class Streamer:
         if len(data_bytes) + len(header) > 1472:
             payload = data_bytes[:1472-len(header)]
             self.socket.sendto(header+payload, (self.dst_ip, self.dst_port))
-            self.expected_num += len(header+payload)
+            self.expected_num += 1472
             timer = Timer(self.timeout, self.retransmission, [header+payload])
-
+           
+            
+            # expect_num already includes the new bytes making it an ACk
             self.timer_buf[self.expected_num] = timer
-
+            # self.timer_buf[self.expected_num+len(payload)] = timer
             timer.start()
+            print('Set timer in send with ack num: ', self.expected_num)
             self.send(data_bytes[1472-len(header):])
         else:
             self.socket.sendto(header+data_bytes, (self.dst_ip, self.dst_port))
-            self.expected_num += len(header+data_bytes)
-            timer = Timer(self.timeout, self.retransmission,
-                          [header+data_bytes])
-
+            self.expected_num += len(header)+len(data_bytes)
+            timer = Timer(self.timeout, self.retransmission, [header+data_bytes])
+            
+            #Expected_num already includes the bytes making it an ack
             self.timer_buf[self.expected_num] = timer
+            # self.timer_buf[self.expected_num+len(data_bytes)] = timer
 
+            print('Set timer in send with ack num: ', self.expected_num)
             timer.start()
 
     def recv(self) -> bytes:
@@ -86,30 +100,50 @@ class Streamer:
     def close(self) -> None:
         """Cleans up. It should block (wait) until the Streamer is done with all
            the necessary ACKs and retransmissions"""
+        # your code goes here, especially after you add ACKs and retransmissions.
+        print('Ready to close Timer buf: ' + str(self.timer_buf))
         while len(self.timer_buf) != 0:
+            time.sleep(5)
             print('Waiting Timer buf: ' + str(self.timer_buf))
             pass
+        print('Closed Timer buf: ' + str(self.timer_buf))
+        
+        self.send_fin()
+        print('Sent the fin')
+        while not self.other_fin:
+            time.sleep(5)
+            print('Waiting for the other to finish')
+            print('Sent the fin again just in case ~shrug~')
+            self.send_fin()
+            pass
+        print('And we have received word the other has finished')
         self.listener = False
 
+    def send_fin(self):
+        fin = b'F\r\n\r\n'
+        self.socket.sendto(fin, (self.dst_ip, self.dst_port))
+    
     def ack_recv(self, data: bytes):
         ack_num = get_ack_num(data)
-        self.received_acks.add(ack_num)
-        if ack_num in self.timer_buf.keys():
-            self.timer_buf[ack_num].cancel()
-            self.timer_buf.pop(ack_num)
+        print('Received Ack_num: ' + str(ack_num))
+        self.timer_buf[ack_num].cancel()
+        self.timer_buf.pop(ack_num)
+
 
     def ack_send(self, data: bytes):
         ack_num = str(get_seq_num(data)+len(data))
-        self.sent_acks.add(int(ack_num))
+        print('Sent Ack_num: ' + str(ack_num))
         header = b'A'+ack_num.encode('utf-8')+b'\r\n\r\n'
         self.socket.sendto(header, (self.dst_ip, self.dst_port))
 
     def retransmission(self, data: bytes):
+        print('THE TIMER HAS RUN OUT with ACK number: ', get_seq_num(data)+len(data))
         self.socket.sendto(data, (self.dst_ip, self.dst_port))
         timer = Timer(self.timeout, self.retransmission, [data])
         self.timer_buf[get_seq_num(data)+len(data)] = timer
+        # self.timer_buf[get_seq_num(data)] = timer
+        print("set timer in retransmit with ack num: ", get_seq_num(data)+len(data))
         timer.start()
-
 
 def get_seq_num(data: bytes) -> int:
     num = data.decode('utf-8')
@@ -118,8 +152,8 @@ def get_seq_num(data: bytes) -> int:
 
 def get_ack_num(data: bytes) -> int:
     num = data.decode('utf-8')
-    ack_num = num[1:num.find('\r\n\r\n')]
-    return int(ack_num)
+    return int(num[1:num.find('\r\n\r\n')])
+
 
 
 def get_payload(data: bytes) -> bytes:
