@@ -1,4 +1,4 @@
-from socket import socket, AF_INET, SOCK_DGRAM
+from socket import socket, AF_INET, SOCK_DGRAM, timeout
 import random
 from threading import Timer, Lock
 from time import sleep
@@ -45,6 +45,8 @@ class LossyUDP(socket):
     def __init__(self):
         self.stopped = False
         super().__init__(AF_INET, SOCK_DGRAM)
+        # make calls to socket.recvfrom timeout after one second, so that self.stopped is checked
+        self.settimeout(1)
 
     def __del__(self):
         # for our purposes, we always want to unbind the port when the app stops
@@ -93,6 +95,7 @@ class LossyUDP(socket):
            returns (data, (source_ip, source_port))"""
         while not self.stopped:
             try:
+                # wait for a packet, but timeout after one second
                 data, addr = super().recvfrom(bufsize)
                 with stats.lock:
                     stats.packets_recv += 1
@@ -100,6 +103,8 @@ class LossyUDP(socket):
             except InterruptedError:
                 # note that on Python >= 3.5, this exception will not happen:
                 # https://www.python.org/dev/peps/pep-0475/
+                continue
+            except timeout:
                 continue
             else:
                 return data, addr
