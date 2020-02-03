@@ -23,8 +23,6 @@ class Streamer:
         self.timeout = .25
         self.executor = ThreadPoolExecutor(max_workers=5)
         self.future = self.executor.submit(self.listening)
-        self.received_acks = set([])
-        self.sent_acks = set([])
 
     def listening(self) -> bytes:
         """Blocks (waits) if no data is ready to be read from the connection."""
@@ -93,14 +91,12 @@ class Streamer:
 
     def ack_recv(self, data: bytes):
         ack_num = get_ack_num(data)
-        self.received_acks.add(ack_num)
         if ack_num in self.timer_buf.keys():
             self.timer_buf[ack_num].cancel()
             self.timer_buf.pop(ack_num)
 
     def ack_send(self, data: bytes):
         ack_num = str(get_seq_num(data)+len(data))
-        self.sent_acks.add(int(ack_num))
         header = b'A'+ack_num.encode('utf-8')+b'\r\n\r\n'
         self.socket.sendto(header, (self.dst_ip, self.dst_port))
 
