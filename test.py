@@ -2,7 +2,7 @@ from streamer import Streamer
 import sys
 import lossy_socket
 
-NUMS = 1000
+NUMS = 50
 
 
 def receive(s):
@@ -10,7 +10,7 @@ def receive(s):
     str_buf = ""
     while expected < NUMS:
         data = s.recv()
-        print("recv returned {%s}" % data.decode('utf-8'))
+        # print("recv returned {%s}" % data.decode('utf-8'))
         str_buf += data.decode('utf-8')
         for t in str_buf.split(" "):
             if len(t) == 0:
@@ -45,7 +45,7 @@ def host1(listen_port, remote_port):
             s.send(buf.encode('utf-8'))
             buf = ""
         i += 1
-    s.close()
+    # s.close()
     print("CHECK THE OTHER SCRIPT FOR STAGE 2 RESULTS.")
 
 
@@ -58,12 +58,12 @@ def host2(listen_port, remote_port):
         print("sending {%s}" % buf)
         s.send(buf.encode('utf-8'))
     receive(s)
-    s.close()
+    # s.close()
     print("STAGE 2 TEST PASSED!")
 
 
 def main():
-    lossy_socket.sim = lossy_socket.SimulationParams(loss_rate=0.0, corruption_rate=0.0,
+    lossy_socket.sim = lossy_socket.SimulationParams(loss_rate=0.0, corruption_rate=0.1,
                                                      max_delivery_delay=0.0,
                                                      become_reliable_after=100000.0)
 
