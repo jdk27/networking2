@@ -34,17 +34,17 @@ class Streamer:
     def listening(self) -> bytes:
         """Blocks (waits) if no data is ready to be read from the connection."""
         while self.listener:
-            print('\nwe are listening\n')
+            print('we are listening')
             data, addr = self.socket.recvfrom()
-            print('raw data: ' + str(data))
+            # print('raw data: ' + str(data))
             if data and data[0] == 65:
-                print('received ack: ' + str(data))
+                # print('received ack: ' + str(data))
                 self.ack_recv(data)
             elif data and data[0] == 70:
                 self.other_fin = True
-                print('received fin packet: ' + str(data))
+                # print('received fin packet: ' + str(data))
             elif data:
-                print('received application data: ' + str(data))
+                # print('received application data: ' + str(data))
                 seq_num = get_seq_num(data)
                 checksum = get_checksum(data)
                 if seq_num != -1 and checksum:
@@ -111,22 +111,21 @@ class Streamer:
 
     def close(self) -> None:
         """Cleans up. It should block (wait) until the Streamer is done with all
-           the necessary ACKs and retransmissions"""
-        # your code goes here, especially after you add ACKs and retransmissions.
-        # while len(self.unacked) != 0:
-        # time.sleep(5)
-        # print('Still listening for ACKs: ' +
-        #      str(self.acking_future.done()))
-        # print('Still listening for anything: ' +
-        #      str(self.listening_future.done()))
-        # pass
+           the necessary ACKs and retransmissions 
+           your code goes here, especially after you add ACKs and retransmissions."""
+        while len(self.unacked) != 0:
+            time.sleep(5)
+            print('Still listening for ACKs: ' + str(self.acking_future.done()))
+            print('Still listening for anything: ' + str(self.listening_future.done()))
+            pass
         # self.socket.stoprecv()
-        # self.send_fin()
-        # while not self.other_fin:
-        # time.sleep(5)
-        # self.send_fin()
-        # pass
-        #self.listener = False
+        self.send_fin()
+        while not self.other_fin:
+            time.sleep(5)
+            self.send_fin()
+            pass
+        self.socket.stoprecv()
+        self.listener = False
         pass
 
     def send_fin(self):
@@ -153,7 +152,7 @@ class Streamer:
                 self.timer_ack = -1
         #print('timer after: ' + str(self.timer))
         #print('self.timer_ack before: ' + str(self.timer_ack))
-        print('unacked after: ' + str(len(self.unacked)) + '\n')
+        # print('unacked after: ' + str(len(self.unacked)) + '\n')
 
     def ack_send(self, data: bytes):
         ack_num = str(get_seq_num(data)+len(data))
