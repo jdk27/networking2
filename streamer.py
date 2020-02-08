@@ -24,7 +24,7 @@ class Streamer:
         self.timer_ack = -1
         self.ack_buf = []
         self.listener = True
-        self.timeout = 5
+        self.timeout = .25
         self.unacked = {}
         self.other_fin = False
         executor = ThreadPoolExecutor(max_workers=3)
@@ -35,9 +35,6 @@ class Streamer:
         """Blocks (waits) if no data is ready to be read from the connection."""
         while self.listener:
             print('\nwe are listening\n')
-            if self.timer != None:
-                print('Timer is alive: ' + str(self.timer.is_alive()))
-                print('timeout number: ' + str(self.timer_ack))
             data, addr = self.socket.recvfrom()
             print('raw data: ' + str(data))
             if data and data[0] == 65:
@@ -47,15 +44,16 @@ class Streamer:
                 self.other_fin = True
                 print('received fin packet: ' + str(data))
             elif data:
-                print('receied application data: ' + str(data))
+                print('received application data: ' + str(data))
                 seq_num = get_seq_num(data)
-                checksum = get_checksum(data).decode('utf-8')
-                calculated_checksum = self.calculate_checksum(
-                    get_payload(data))
-                if checksum == calculated_checksum:
-                    self.rec_buf[seq_num] = data
-                    # self.ack_send(data)
-                    self.ack_buf.append(data)
+                checksum = get_checksum(data)
+                if seq_num != -1 and checksum:
+                    checksum = checksum.decode('utf-8')
+                    calculated_checksum = self.calculate_checksum(
+                        get_payload(data))
+                    if checksum == calculated_checksum:
+                        self.rec_buf[seq_num] = data
+                        self.ack_buf.append(data)
 
     def acking(self):
         while self.listener:
@@ -115,20 +113,21 @@ class Streamer:
         """Cleans up. It should block (wait) until the Streamer is done with all
            the necessary ACKs and retransmissions"""
         # your code goes here, especially after you add ACKs and retransmissions.
-        while len(self.unacked) != 0:
-            time.sleep(5)
-            print('Still listening for ACKs: ' +
-                  str(self.acking_future.done()))
-            print('Still listening for anything: ' +
-                  str(self.listening_future.done()))
-            pass
-        self.socket.stoprecv()
-        self.send_fin()
-        while not self.other_fin:
-            time.sleep(5)
-            self.send_fin()
-            pass
-        self.listener = False
+        # while len(self.unacked) != 0:
+        # time.sleep(5)
+        # print('Still listening for ACKs: ' +
+        #      str(self.acking_future.done()))
+        # print('Still listening for anything: ' +
+        #      str(self.listening_future.done()))
+        # pass
+        # self.socket.stoprecv()
+        # self.send_fin()
+        # while not self.other_fin:
+        # time.sleep(5)
+        # self.send_fin()
+        # pass
+        #self.listener = False
+        pass
 
     def send_fin(self):
         fin = b'F\r\n\r\n'
@@ -136,14 +135,14 @@ class Streamer:
 
     def ack_recv(self, data: bytes):
         ack_num = get_ack_num(data)
+        #print('unacked before: ' + str(self.unacked))
+        #print('timer before: ' + str(self.timer))
+        #print('self.timer_ack before: ' + str(self.timer_ack))
         if ack_num and ack_num in self.unacked:
             self.unacked.pop(ack_num)
-            print('Updated unacked: ' + str(self.unacked))
         if ack_num and ack_num == self.timer_ack:
-            print('\n ACK_NUM IS TIMER ACK\n')
             self.timer.cancel()
             if self.unacked:
-                print('there are unacked packets')
                 new_timer_ack = sorted(self.unacked.keys())[0]
                 self.timer_ack = new_timer_ack
                 self.timer = Timer(
@@ -152,61 +151,72 @@ class Streamer:
             else:
                 self.timer = None
                 self.timer_ack = -1
+        #print('timer after: ' + str(self.timer))
+        #print('self.timer_ack before: ' + str(self.timer_ack))
+        print('unacked after: ' + str(len(self.unacked)) + '\n')
 
     def ack_send(self, data: bytes):
         ack_num = str(get_seq_num(data)+len(data))
         header = b'A'+ack_num.encode('utf-8')+b'\r\n\r\n'
-        print('sent ack: ' + str(header))
         self.socket.sendto(header, (self.dst_ip, self.dst_port))
 
     def retransmission(self, data: bytes):
-        print('RESENDING DATA: ' + str(data))
-        print('unacked data: ' + str(self.unacked))
-        print('timer ack: ' + str(self.timer_ack))
         self.socket.sendto(data, (self.dst_ip, self.dst_port))
         self.timer = Timer(self.timeout, self.retransmission, [data])
         self.timer.start()
 
-    def calculate_checksum(self, msg):
-        msg = msg.decode('utf-8')
-        s = 0       # Binary Sum
-        # loop taking 2 characters at a time
-        for i in range(0, len(msg), 2):
-            if (i+1) < len(msg):
-                a = ord(msg[i])
-                b = ord(msg[i+1])
-                s = s + (a+(b << 8))
-            elif (i+1) == len(msg):
-                s += ord(msg[i])
-            else:
-                raise "Something Wrong here"
-        # One's Complement
-        s = s + (s >> 16)
-        s = ~s & 0xffff
-        return str(s)
+    def calculate_checksum(self, msg) -> str:
+        try:
+            msg = msg.decode('utf-8')
+            s = 0       # Binary Sum
+            # loop taking 2 characters at a time
+            for i in range(0, len(msg), 2):
+                if (i+1) < len(msg):
+                    a = ord(msg[i])
+                    b = ord(msg[i+1])
+                    s = s + (a+(b << 8))
+                elif (i+1) == len(msg):
+                    s += ord(msg[i])
+                else:
+                    raise "Something Wrong here"
+            # One's Complement
+            s = s + (s >> 16)
+            s = ~s & 0xffff
+            return str(s)
+        except:
+            return ''
 
 
 def get_seq_num(data: bytes) -> int:
-    num = data.decode('utf-8')
-    return int(num[:num.find('C')])
+    try:
+        num = data.decode('utf-8')
+        num = int(num[:num.find('C')])
+        return num
+    except:
+        return -1
 
 
 def get_ack_num(data: bytes) -> int:
     try:
         num = data.decode('utf-8')
         num = int(num[1:num.find('\r\n\r\n')])
-        print('valid ack')
         return num
     except:
-        print('invalid ack')
         return 0
 
 
 def get_payload(data: bytes) -> bytes:
-    data = data.decode('utf-8')
-    return data[data.find('\r\n\r\n')+len('\r\n\r\n'):].encode('utf-8')
+    try:
+        data = data.decode('utf-8')
+        return data[data.find('\r\n\r\n')+len('\r\n\r\n'):].encode('utf-8')
+    except:
+        return 0
 
 
-def get_checksum(data: bytes):
-    data = data.decode('utf-8')
-    return data[data.find('C')+1:data.find('\r\n\r\n')].encode('utf-8')
+def get_checksum(data: bytes) -> str:
+    try:
+        data = data.decode('utf-8')
+        data = data[data.find('C')+1:data.find('\r\n\r\n')].encode('utf-8')
+        return data
+    except:
+        return ''
