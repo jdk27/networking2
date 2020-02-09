@@ -27,6 +27,7 @@ class Streamer:
         self.timeout = .25
         self.unacked = {}
         self.other_fin = False
+        self.own_fin = False
         executor = ThreadPoolExecutor(max_workers=3)
         self.listening_future = executor.submit(self.listening)
         self.acking_future = executor.submit(self.acking)
@@ -34,7 +35,7 @@ class Streamer:
     def listening(self) -> bytes:
         """Blocks (waits) if no data is ready to be read from the connection."""
         while self.listener:
-            print('we are listening')
+            # print('we are listening')
             data, addr = self.socket.recvfrom()
             # print('raw data: ' + str(data))
             if data and data[0] == 65:
@@ -119,11 +120,17 @@ class Streamer:
             print('Still listening for anything: ' + str(self.listening_future.done()))
             pass
         # self.socket.stoprecv()
+        print('*****How much we got left ****', threading.active_count())
         self.send_fin()
+        self.own_fin = True
         while not self.other_fin:
             time.sleep(5)
             self.send_fin()
             pass
+        print('-----There should be nothing-----', threading.active_count())
+        while(threading.active_count() > 4):
+            time.sleep(5)
+            print('waiting here', threading.enumerate())
         self.socket.stoprecv()
         self.listener = False
         pass
@@ -160,9 +167,13 @@ class Streamer:
         self.socket.sendto(header, (self.dst_ip, self.dst_port))
 
     def retransmission(self, data: bytes):
-        self.socket.sendto(data, (self.dst_ip, self.dst_port))
-        self.timer = Timer(self.timeout, self.retransmission, [data])
-        self.timer.start()
+        # self.socket.sendto(data, (self.dst_ip, self.dst_port))
+        # self.timer = Timer(self.timeout, self.retransmission, [data])
+        # self.timer.start()
+        if not (self.other_fin and self.own_fin):
+            self.socket.sendto(data, (self.dst_ip, self.dst_port))
+            self.timer = Timer(self.timeout, self.retransmission, [data])
+            self.timer.start()
 
     def calculate_checksum(self, msg) -> str:
         try:
