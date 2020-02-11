@@ -6,7 +6,6 @@ from socket import INADDR_ANY
 from concurrent.futures import ThreadPoolExecutor
 from threading import Timer
 import threading
-import time
 # checksum for part 4
 from hashlib import md5
 
@@ -40,31 +39,30 @@ class Streamer:
             data, addr = self.socket.recvfrom()
             checksum = get_checksum(data)
             if data:
-                calculated_checksum = self.calculate_checksum(data[4:])
+                calculated_checksum = self.calculate_checksum(data[32:])
             if data and checksum == calculated_checksum:
-                if data and data[4] == 65:
+                if data and data[32] == 65:
                     self.ack_recv(data)
-                elif data and data[4] == 70:
+                elif data and data[32] == 70:
                     self.other_fin = True
                 elif data:
                     seq_num = get_ack_or_seq_num(data)
                     if seq_num != -1:
-                        self.rec_buf[seq_num] = data
                         self.ack_buf.append(data)
+                        if seq_num >= self.expected_num:
+                            self.rec_buf[seq_num] = data
 
     def acking(self):
         while self.listener:
             while self.ack_buf:
                 self.ack_send(self.ack_buf[0])
                 self.ack_buf.pop(0)
-                #print('updated ack_buf: ' + str(self.ack_buf))
 
     def send(self, data_bytes: bytes):
         """Note that data_bytes can be larger than one packet."""
         # length check should be dif bc must make space for header
         seq_num = str(self.expected_num).encode('utf-8')
 
-        # if len(data_bytes) + len(seq_num) + 6 + len(b'\r\n\r\n') > 1472:
         if len(data_bytes) + len(seq_num) + 33 + len(b'\r\n\r\n') > 1472:
             payload = data_bytes[:1472-len(seq_num)-33-len(b'\r\n\r\n')]
             checksum = self.calculate_checksum(payload)
@@ -112,7 +110,6 @@ class Streamer:
         """Cleans up. It should block (wait) until the Streamer is done with all
            the necessary ACKs and retransmissions
            your code goes here, especially after you add ACKs and retransmissions."""
-        print('close initiated')
         while len(self.unacked) != 0:
             pass
         self.send_fin()
@@ -132,7 +129,7 @@ class Streamer:
         self.socket.sendto(checksum+fin, (self.dst_ip, self.dst_port))
 
     def ack_recv(self, data: bytes):
-        ack_num = get_ack_num(data)
+        ack_num = get_ack_or_seq_num(data)
         if ack_num and ack_num in self.unacked:
             self.unacked.pop(ack_num)
         if ack_num and ack_num == self.timer_ack:
@@ -159,19 +156,18 @@ class Streamer:
             self.timer = Timer(self.timeout, self.retransmission, [data])
             self.timer.start()
 
-
     # Uses md5 from hashlib to calculate checksum
+
     def calculate_checksum(self, msg) -> str:
         checksum = md5(msg).hexdigest()
         checksum = checksum.encode('utf-8')
-
         return checksum
 
 
 def get_ack_or_seq_num(data: bytes) -> int:
     try:
         num = data.decode('utf-8')
-        num = int(num[5:num.find('\r\n\r\n')])
+        num = int(num[33:num.find('\r\n\r\n')])
         return num
     except:
         return -1
@@ -187,9 +183,9 @@ def get_payload(data: bytes) -> bytes:
         return 0
 
 
-def get_checksum(data: bytes) -> str:
+def get_checksum(data: bytes) -> bytes:
     try:
-        data = data[:4]
-        return data[:4]
+        data = data[:32]
+        return data
     except:
         return ''
