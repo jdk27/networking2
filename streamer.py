@@ -7,6 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from threading import Timer
 import threading
 import time
+from hashlib import md5
 
 
 class Streamer:
@@ -49,12 +50,17 @@ class Streamer:
                 seq_num = get_seq_num(data)
                 checksum = get_checksum(data)
                 if seq_num != -1 and checksum:
-                    checksum = checksum.decode('utf-8')
+                    # checksum = checksum.decode('utf-8')
                     calculated_checksum = self.calculate_checksum(
                         get_payload(data))
                     if checksum == calculated_checksum:
                         self.rec_buf[seq_num] = data
                         self.ack_buf.append(data)
+                        # print('We just added ', data)
+                        # print('with seq num ', seq_num)
+                    # else:
+                    #     print('~~~~~~~~ Here is the sent checksum ~~~~~~~', checksum)
+                    #     print('-------- Here is the calculated checksum -------', calculated_checksum)
 
     def acking(self):
         while self.listener:
@@ -68,9 +74,14 @@ class Streamer:
         # length check should be dif bc must make space for header
         seq_num = str(self.expected_num).encode('utf-8')
 
-        if len(data_bytes) + len(seq_num) + 6 + len(b'\r\n\r\n') > 1472:
-            payload = data_bytes[:1472-len(seq_num)-6-len(b'\r\n\r\n')]
-            checksum = self.calculate_checksum(payload).encode('utf-8')
+        # if len(data_bytes) + len(seq_num) + 6 + len(b'\r\n\r\n') > 1472:
+        if len(data_bytes) + len(seq_num) + 33 + len(b'\r\n\r\n') > 1472:
+            # payload = data_bytes[:1472-len(seq_num)-6-len(b'\r\n\r\n')]
+            payload = data_bytes[:1472-len(seq_num)-33-len(b'\r\n\r\n')]
+            
+            # checksum = self.calculate_checksum(payload).encode('utf-8')
+            checksum = self.calculate_checksum(payload)
+
             header = seq_num+b'C'+checksum+b'\r\n\r\n'
             self.socket.sendto(header+payload, (self.dst_ip, self.dst_port))
             self.expected_num += len(header+payload)
@@ -82,7 +93,9 @@ class Streamer:
                 self.timer_ack = self.expected_num
             self.send(data_bytes[1472-len(header):])
         else:
-            checksum = self.calculate_checksum(data_bytes).encode('utf-8')
+            # checksum = self.calculate_checksum(data_bytes).encode('utf-8')
+            checksum = self.calculate_checksum(data_bytes)
+
             header = seq_num+b'C'+checksum+b'\r\n\r\n'
             self.socket.sendto(header+data_bytes, (self.dst_ip, self.dst_port))
             self.expected_num += len(header+data_bytes)
@@ -108,6 +121,9 @@ class Streamer:
             self.rec_buf.pop(self.expected_num)
             self.expected_num += len(data)
             application_data += get_payload(data)
+            print('what does this give me? ', application_data)
+            print('and the seq num? ', self.expected_num)
+        # print('====== Data returned ======', application_data)
         return application_data
 
     def close(self) -> None:
@@ -122,15 +138,19 @@ class Streamer:
         # self.socket.stoprecv()
         print('*****How much we got left ****', threading.active_count())
         self.send_fin()
+        self.send_fin()
         self.own_fin = True
         while not self.other_fin:
             time.sleep(5)
             self.send_fin()
+            print('are we stuck here')
             pass
         print('-----There should be nothing-----', threading.active_count())
         while(threading.active_count() > 4):
             time.sleep(5)
             print('waiting here', threading.enumerate())
+            pass
+        print(':::::: Ending with this many left ::::::', threading.active_count())
         self.socket.stoprecv()
         self.listener = False
         pass
@@ -175,27 +195,34 @@ class Streamer:
             self.timer = Timer(self.timeout, self.retransmission, [data])
             self.timer.start()
 
+    
+    # Using formula found online from 
+    # http://www.bitforestinfo.com/2018/01/python-codes-to-calculate-tcp-checksum.html
     def calculate_checksum(self, msg) -> str:
-        try:
-            msg = msg.decode('utf-8')
-            s = 0       # Binary Sum
-            # loop taking 2 characters at a time
-            for i in range(0, len(msg), 2):
-                if (i+1) < len(msg):
-                    a = ord(msg[i])
-                    b = ord(msg[i+1])
-                    s = s + (a+(b << 8))
-                elif (i+1) == len(msg):
-                    s += ord(msg[i])
-                else:
-                    raise "Something Wrong here"
-            # One's Complement
-            s = s + (s >> 16)
-            s = ~s & 0xffff
-            return str(s)
-        except:
-            return ''
+        # try:
+        #     msg = msg.decode('utf-8')
+        #     s = 0       # Binary Sum
+        #     # loop taking 2 characters at a time
+        #     for i in range(0, len(msg), 2):
+        #         if (i+1) < len(msg):
+        #             a = ord(msg[i])
+        #             b = ord(msg[i+1])
+        #             s = s + (a+(b << 8))
+        #         elif (i+1) == len(msg):
+        #             s += ord(msg[i])
+        #         else:
+        #             raise "Something Wrong here"
+        #     # One's Complement
+        #     s = s + (s >> 16)
+        #     s = ~s & 0xffff
+        #     return str(s)
+        # except:
+        #     return ''
+        
+        checksum = md5(msg).hexdigest()
+        checksum = checksum.encode('utf-8')
 
+        return checksum
 
 def get_seq_num(data: bytes) -> int:
     try:
