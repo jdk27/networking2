@@ -35,24 +35,18 @@ class Streamer:
     def listening(self) -> bytes:
         """Blocks (waits) if no data is ready to be read from the connection."""
         while self.listener:
-            # print('we are listening')
             data, addr = self.socket.recvfrom()
-            # print('raw data: ' + str(data))
-            if data and data[0] == 65:
-                # print('received ack: ' + str(data))
-                self.ack_recv(data)
-            elif data and data[0] == 70:
-                self.other_fin = True
-                # print('received fin packet: ' + str(data))
-            elif data:
-                # print('received application data: ' + str(data))
-                seq_num = get_seq_num(data)
-                checksum = get_checksum(data)
-                if seq_num != -1 and checksum:
-                    checksum = checksum.decode('utf-8')
-                    calculated_checksum = self.calculate_checksum(
-                        get_payload(data))
-                    if checksum == calculated_checksum:
+            checksum = get_checksum(data)
+            if data:
+                calculated_checksum = self.calculate_checksum(data[4:])
+            if data and checksum == calculated_checksum:
+                if data and data[4] == 65:
+                    self.ack_recv(data)
+                elif data and data[4] == 70:
+                    self.other_fin = True
+                elif data:
+                    seq_num = get_ack_or_seq_num(data)
+                    if seq_num != -1:
                         self.rec_buf[seq_num] = data
                         self.ack_buf.append(data)
 
@@ -61,17 +55,25 @@ class Streamer:
             while self.ack_buf:
                 self.ack_send(self.ack_buf[0])
                 self.ack_buf.pop(0)
+                #print('updated ack_buf: ' + str(self.ack_buf))
 
     def send(self, data_bytes: bytes):
         """Note that data_bytes can be larger than one packet."""
-        # Your code goes here!  The code below should be changed!
         # length check should be dif bc must make space for header
         seq_num = str(self.expected_num).encode('utf-8')
 
-        if len(data_bytes) + len(seq_num) + 6 + len(b'\r\n\r\n') > 1472:
-            payload = data_bytes[:1472-len(seq_num)-6-len(b'\r\n\r\n')]
-            checksum = self.calculate_checksum(payload).encode('utf-8')
-            header = seq_num+b'C'+checksum+b'\r\n\r\n'
+        # checksum = 4 bytes,
+        # flag first, then checksum, then seq/ack number, then \r\n\r\n, then payload
+        if 4+1+len(data_bytes) + len(seq_num) + len(b'\r\n\r\n') > 1472:
+            payload = data_bytes[:1472-4-1-len(seq_num)-len(b'\r\n\r\n')]
+            checksum = self.calculate_checksum(
+                b'S'+seq_num+b'\r\n\r\n'+payload)
+            header = checksum + b'S' + \
+                seq_num+b'\r\n\r\n'
+
+            # not_checksum = seq_num+b'\r\n\r\n'
+            # checksum = self.calculate_checksum(payload).encode('utf-8')
+            # header = seq_num+b'C'+checksum+b'\r\n\r\n'
             self.socket.sendto(header+payload, (self.dst_ip, self.dst_port))
             self.expected_num += len(header+payload)
             self.unacked[self.expected_num] = header+payload
@@ -82,14 +84,15 @@ class Streamer:
                 self.timer_ack = self.expected_num
             self.send(data_bytes[1472-len(header):])
         else:
-            checksum = self.calculate_checksum(data_bytes).encode('utf-8')
-            header = seq_num+b'C'+checksum+b'\r\n\r\n'
-            self.socket.sendto(header+data_bytes, (self.dst_ip, self.dst_port))
-            self.expected_num += len(header+data_bytes)
-            self.unacked[self.expected_num] = header+data_bytes
+            checksum = self.calculate_checksum(
+                b'S'+seq_num+b'\r\n\r\n'+data_bytes)
+            message = checksum+b'S'+seq_num+b'\r\n\r\n'+data_bytes
+            self.socket.sendto(message, (self.dst_ip, self.dst_port))
+            self.expected_num += len(message)
+            self.unacked[self.expected_num] = message
             if len(self.unacked) == 1:
                 self.timer = Timer(
-                    self.timeout, self.retransmission, [header+data_bytes])
+                    self.timeout, self.retransmission, [message])
                 self.timer.start()
                 self.timer_ack = self.expected_num
 
@@ -112,12 +115,10 @@ class Streamer:
 
     def close(self) -> None:
         """Cleans up. It should block (wait) until the Streamer is done with all
-           the necessary ACKs and retransmissions 
+           the necessary ACKs and retransmissions
            your code goes here, especially after you add ACKs and retransmissions."""
+        print('close initiated')
         while len(self.unacked) != 0:
-            time.sleep(5)
-            print('Still listening for ACKs: ' + str(self.acking_future.done()))
-            print('Still listening for anything: ' + str(self.listening_future.done()))
             pass
         # self.socket.stoprecv()
         print('*****How much we got left ****', threading.active_count())
@@ -137,14 +138,12 @@ class Streamer:
 
     def send_fin(self):
         fin = b'F\r\n\r\n'
-        self.socket.sendto(fin, (self.dst_ip, self.dst_port))
+        checksum = self.calculate_checksum(fin)
+        self.socket.sendto(checksum+fin, (self.dst_ip, self.dst_port))
 
     def ack_recv(self, data: bytes):
-        ack_num = get_ack_num(data)
-        #print('unacked before: ' + str(self.unacked))
-        #print('timer before: ' + str(self.timer))
-        #print('self.timer_ack before: ' + str(self.timer_ack))
-        if ack_num and ack_num in self.unacked:
+        ack_num = get_ack_or_seq_num(data)
+        if ack_num != -1 and ack_num in self.unacked:
             self.unacked.pop(ack_num)
         if ack_num and ack_num == self.timer_ack:
             self.timer.cancel()
@@ -157,25 +156,20 @@ class Streamer:
             else:
                 self.timer = None
                 self.timer_ack = -1
-        #print('timer after: ' + str(self.timer))
-        #print('self.timer_ack before: ' + str(self.timer_ack))
-        # print('unacked after: ' + str(len(self.unacked)) + '\n')
 
     def ack_send(self, data: bytes):
-        ack_num = str(get_seq_num(data)+len(data))
-        header = b'A'+ack_num.encode('utf-8')+b'\r\n\r\n'
-        self.socket.sendto(header, (self.dst_ip, self.dst_port))
+        ack_num = str(get_ack_or_seq_num(data)+len(data))
+        rest = b'A'+ack_num.encode('utf-8')+b'\r\n\r\n'
+        checksum = self.calculate_checksum(rest)
+        self.socket.sendto(checksum+rest, (self.dst_ip, self.dst_port))
 
     def retransmission(self, data: bytes):
-        # self.socket.sendto(data, (self.dst_ip, self.dst_port))
-        # self.timer = Timer(self.timeout, self.retransmission, [data])
-        # self.timer.start()
         if not (self.other_fin and self.own_fin):
             self.socket.sendto(data, (self.dst_ip, self.dst_port))
             self.timer = Timer(self.timeout, self.retransmission, [data])
             self.timer.start()
 
-    def calculate_checksum(self, msg) -> str:
+    def calculate_checksum(self, msg: bytes) -> bytes:
         try:
             msg = msg.decode('utf-8')
             s = 0       # Binary Sum
@@ -189,30 +183,27 @@ class Streamer:
                     s += ord(msg[i])
                 else:
                     raise "Something Wrong here"
-            # One's Complement
             s = s + (s >> 16)
             s = ~s & 0xffff
-            return str(s)
+            s = str(hex(s)[2:])
+            while len(s) < 4:
+                s = "0"+s
+            return s.encode('utf-8')
         except:
-            return ''
+            return b''
+
+# only occurs when we have application data
 
 
-def get_seq_num(data: bytes) -> int:
+def get_ack_or_seq_num(data: bytes) -> int:
     try:
         num = data.decode('utf-8')
-        num = int(num[:num.find('C')])
+        num = int(num[5:num.find('\r\n\r\n')])
         return num
     except:
         return -1
 
-
-def get_ack_num(data: bytes) -> int:
-    try:
-        num = data.decode('utf-8')
-        num = int(num[1:num.find('\r\n\r\n')])
-        return num
-    except:
-        return 0
+# only occurs when we have an ACK
 
 
 def get_payload(data: bytes) -> bytes:
@@ -225,8 +216,7 @@ def get_payload(data: bytes) -> bytes:
 
 def get_checksum(data: bytes) -> str:
     try:
-        data = data.decode('utf-8')
-        data = data[data.find('C')+1:data.find('\r\n\r\n')].encode('utf-8')
-        return data
+        data = data[:4]
+        return data[:4]
     except:
         return ''
