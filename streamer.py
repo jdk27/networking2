@@ -7,6 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from threading import Timer
 import threading
 import time
+# checksum for part 4
 from hashlib import md5
 
 
@@ -63,18 +64,11 @@ class Streamer:
         # length check should be dif bc must make space for header
         seq_num = str(self.expected_num).encode('utf-8')
 
-        # checksum = 4 bytes,
-        # flag first, then checksum, then seq/ack number, then \r\n\r\n, then payload
-        if 4+1+len(data_bytes) + len(seq_num) + len(b'\r\n\r\n') > 1472:
-            payload = data_bytes[:1472-4-1-len(seq_num)-len(b'\r\n\r\n')]
-            checksum = self.calculate_checksum(
-                b'S'+seq_num+b'\r\n\r\n'+payload)
-            header = checksum + b'S' + \
-                seq_num+b'\r\n\r\n'
-
-            # not_checksum = seq_num+b'\r\n\r\n'
-            # checksum = self.calculate_checksum(payload).encode('utf-8')
-            # header = seq_num+b'C'+checksum+b'\r\n\r\n'
+        # if len(data_bytes) + len(seq_num) + 6 + len(b'\r\n\r\n') > 1472:
+        if len(data_bytes) + len(seq_num) + 33 + len(b'\r\n\r\n') > 1472:
+            payload = data_bytes[:1472-len(seq_num)-33-len(b'\r\n\r\n')]
+            checksum = self.calculate_checksum(payload)
+            header = seq_num+b'C'+checksum+b'\r\n\r\n'
             self.socket.sendto(header+payload, (self.dst_ip, self.dst_port))
             self.expected_num += len(header+payload)
             self.unacked[self.expected_num] = header+payload
@@ -121,15 +115,14 @@ class Streamer:
         print('close initiated')
         while len(self.unacked) != 0:
             pass
-        print('no more unacked')
+        self.send_fin()
         self.send_fin()
         self.own_fin = True
         while not self.other_fin:
             self.send_fin()
-        print('other one has no acks')
+            pass
         while(threading.active_count() > 4):
             pass
-        #print('threading count less than 4')
         self.socket.stoprecv()
         self.listener = False
 
@@ -139,8 +132,8 @@ class Streamer:
         self.socket.sendto(checksum+fin, (self.dst_ip, self.dst_port))
 
     def ack_recv(self, data: bytes):
-        ack_num = get_ack_or_seq_num(data)
-        if ack_num != -1 and ack_num in self.unacked:
+        ack_num = get_ack_num(data)
+        if ack_num and ack_num in self.unacked:
             self.unacked.pop(ack_num)
         if ack_num and ack_num == self.timer_ack:
             self.timer.cancel()
@@ -166,30 +159,13 @@ class Streamer:
             self.timer = Timer(self.timeout, self.retransmission, [data])
             self.timer.start()
 
-    def calculate_checksum(self, msg: bytes) -> bytes:
-        try:
-            msg = msg.decode('utf-8')
-            s = 0       # Binary Sum
-            # loop taking 2 characters at a time
-            for i in range(0, len(msg), 2):
-                if (i+1) < len(msg):
-                    a = ord(msg[i])
-                    b = ord(msg[i+1])
-                    s = s + (a+(b << 8))
-                elif (i+1) == len(msg):
-                    s += ord(msg[i])
-                else:
-                    raise "Something Wrong here"
-            s = s + (s >> 16)
-            s = ~s & 0xffff
-            s = str(hex(s)[2:])
-            while len(s) < 4:
-                s = "0"+s
-            return s.encode('utf-8')
-        except:
-            return b''
 
-# only occurs when we have application data
+    # Uses md5 from hashlib to calculate checksum
+    def calculate_checksum(self, msg) -> str:
+        checksum = md5(msg).hexdigest()
+        checksum = checksum.encode('utf-8')
+
+        return checksum
 
 
 def get_ack_or_seq_num(data: bytes) -> int:
