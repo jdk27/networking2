@@ -7,6 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from threading import Timer
 import threading
 import time
+from hashlib import md5
 
 
 class Streamer:
@@ -120,21 +121,17 @@ class Streamer:
         print('close initiated')
         while len(self.unacked) != 0:
             pass
-        # self.socket.stoprecv()
-        print('*****How much we got left ****', threading.active_count())
+        print('no more unacked')
         self.send_fin()
         self.own_fin = True
         while not self.other_fin:
-            time.sleep(5)
             self.send_fin()
-            pass
-        print('-----There should be nothing-----', threading.active_count())
+        print('other one has no acks')
         while(threading.active_count() > 4):
-            time.sleep(5)
-            print('waiting here', threading.enumerate())
+            pass
+        #print('threading count less than 4')
         self.socket.stoprecv()
         self.listener = False
-        pass
 
     def send_fin(self):
         fin = b'F\r\n\r\n'
